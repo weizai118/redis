@@ -39,6 +39,7 @@
 #include <float.h>
 #include <stdint.h>
 #include <errno.h>
+#include <time.h>
 
 #include "util.h"
 #include "sha1.h"
@@ -346,6 +347,7 @@ int string2ll(const char *s, size_t slen, long long *value) {
     int negative = 0;
     unsigned long long v;
 
+    /* A zero length string is not a valid number. */
     if (plen == slen)
         return 0;
 
@@ -355,6 +357,8 @@ int string2ll(const char *s, size_t slen, long long *value) {
         return 1;
     }
 
+    /* Handle negative numbers: just set a flag and continue like if it
+     * was a positive number. Later convert into negative. */
     if (p[0] == '-') {
         negative = 1;
         p++; plen++;
@@ -368,13 +372,11 @@ int string2ll(const char *s, size_t slen, long long *value) {
     if (p[0] >= '1' && p[0] <= '9') {
         v = p[0]-'0';
         p++; plen++;
-    } else if (p[0] == '0' && slen == 1) {
-        *value = 0;
-        return 1;
     } else {
         return 0;
     }
 
+    /* Parse all the other digits, checking for overflow at every step. */
     while (plen < slen && p[0] >= '0' && p[0] <= '9') {
         if (v > (ULLONG_MAX / 10)) /* Overflow. */
             return 0;
@@ -391,6 +393,8 @@ int string2ll(const char *s, size_t slen, long long *value) {
     if (plen < slen)
         return 0;
 
+    /* Convert to negative if needed, and do the final overflow check when
+     * converting from unsigned long long to long long. */
     if (negative) {
         if (v > ((unsigned long long)(-(LLONG_MIN+1))+1)) /* Overflow. */
             return 0;
@@ -647,6 +651,24 @@ sds getAbsolutePath(char *filename) {
     abspath = sdscatsds(abspath,relpath);
     sdsfree(relpath);
     return abspath;
+}
+
+/*
+ * Gets the proper timezone in a more portable fashion
+ * i.e timezone variables are linux specific.
+ */
+
+unsigned long getTimeZone(void) {
+#ifdef __linux__
+    return timezone;
+#else
+    struct timeval tv;
+    struct timezone tz;
+
+    gettimeofday(&tv, &tz);
+
+    return tz.tz_minuteswest * 60UL;
+#endif
 }
 
 /* Return true if the specified path is just a file basename without any
